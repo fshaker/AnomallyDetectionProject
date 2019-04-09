@@ -8,50 +8,37 @@ from __future__ import division
 import pickle
 import numpy as np
 import time
-from FJDA_Learning import Units, ModelParameters, learn, recall
+from OldCode.FJDA_Learning import Units, ModelParameters, learn, recall
 
-
+np.set_printoptions(threshold=np.NaN)
 """from 1 am to 5:59 am is one period, from 6am to 9:59 am is a period, 10am to 2:59 pm,
 3 pm to 6:59 pm, 7 pm to 12:59 am
 
 Here I am trying to do training on the period from 10am to 2:59 pm EST which is 15:00 GMT to  
 19:59 GMT 
 """
-start_time = time.time()
 
 pickle_out = open("1_week_speed_Jan29_2.pickle","rb")
 speed1 = pickle.load(pickle_out)
 speed1 = speed1[0:100, 50:52]
-speed1_b=speed1
-speed1 = speed1 > 50
-speed1 = speed1.astype(int)
 pickle_out.close()
 #speed1 = speed1[:,np.newaxis]
 
 pickle_out = open("2_week_speed_Jan29_2.pickle","rb")
 speed2 = pickle.load(pickle_out)
 speed2 = speed2[0:100, 50:52]
-speed2_b=speed2
-speed2 = speed2 > 50
-speed2 = speed2.astype(int)
 pickle_out.close()
 #speed2 = speed2[:,np.newaxis]
 
 pickle_out = open("3_week_speed_Jan29_2.pickle","rb")
 speed3 = pickle.load(pickle_out)
 speed3 = speed3[0:100, 50:52]
-speed3_b=speed3
-speed3 = speed3 > 50
-speed3 = speed3.astype(int)
 pickle_out.close()
 #speed3 = speed3[:,np.newaxis]
 
 pickle_out = open("4_week_speed_Jan29_2.pickle","rb")
 speed4 = pickle.load(pickle_out)
 speed4 = speed4[0:100, 50:52]
-speed4_b=speed4
-speed4 = speed4 > 50
-speed4 = speed4.astype(int)
 pickle_out.close()
 #speed4 = speed4[:,np.newaxis]
 
@@ -61,18 +48,29 @@ pickle_out.close()
 pickle_out = open("test_week_speed_Jan29_2.pickle","rb")
 speed_test = pickle.load(pickle_out)
 speed_test = speed_test[0:100, 50:52]
-speed_test = speed_test > 50
-speed_test = speed_test.astype(int)
 pickle_out.close()
-#speed_test = speed_test[:,np.newaxis]
 
 # Units( numInputUnits, numOutputUnits, numHiddenUnits
 numberOfDANodes = 1024
-units = Units(100, 100, 150)
+numInput = 100
+numOutput = 100
+numHidden = 150
+speedThreshold = 50
+
+start_time = time.time()
+units = Units(numInput, numOutput, numHidden)
 modelParameters = ModelParameters(units.numUnits, numberOfDANodes)
 
-
-
+speed1 = speed1 > speedThreshold
+speed1 = speed1.astype(int)
+speed2 = speed2 > speedThreshold
+speed2 = speed2.astype(int)
+speed3 = speed3 > speedThreshold
+speed3 = speed3.astype(int)
+speed4 = speed4 > speedThreshold
+speed4 = speed4.astype(int)
+speed_test = speed_test > speedThreshold
+speed_test = speed_test.astype(int)
 # Defining connections:
 # Connections is a matrix of size numUnits x numUnits. The element "Connections[a,b]" represents the
 # number of connections between nodes (a,b).
@@ -100,15 +98,14 @@ for i in range(units.numHiddenUnits, 0, -1):
         connections[-i, -j] = 1
         
 connections = connections[::-1].T[::-1]
-        
+
 valid = np.nonzero(connections)
 numConnections = np.size(valid[0])
 connections_index = connections
-connections_index[valid] = np.arange(1,numConnections+1)
+connections_index[valid] = np.arange(1, numConnections + 1)
 connections_index = connections_index + connections_index.T - 1
 
-
-past_weeks_1 = np.append(speed1.T,speed1.T, axis=1)
+past_weeks_1 = np.append(speed1.T,speed1.T, axis=1) # repeat twice, accounts for input nodes and output nodes values
 past_weeks_2 = np.append(speed2.T,speed2.T, axis=1)
 past_weeks_3 = np.append(speed3.T,speed3.T, axis=1)
 past_weeks_4 = np.append(speed4.T,speed4.T, axis=1)
@@ -135,3 +132,7 @@ elapsed_time_testing = time.time() - start_time
 print ("Recovered: ", recovered[42:45])
 print ("Actual Speed: ", speed_test[42:45,1])
 print elapsed_time, elapsed_time_testing
+
+from tempfile import TemporaryFile
+recoveredSpeed = TemporaryFile()
+np.savez('recoveredSpeed_fA_2', recovered=recovered, ActualSpeed=speed_test[:, 1])

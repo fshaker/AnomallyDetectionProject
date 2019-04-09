@@ -11,6 +11,26 @@ da = fjda_wrapper.fjda_wrapper()
 
 Clamp = Enum('Clamp', 'VISIBLE_UNITS NONE INPUT_UNITS')
 
+pa = {'offset_inc_rate': 0,
+      'tmp_st': 20,
+      'tmp_decay': 0.2,
+      'tmp_mode': 0,
+      'tmp_interval': 2,
+      'noise_model': 0,
+      'parallel_tempering': 0,
+      'pt_interval': 1000}
+
+args = {
+        'eg_start': [],
+        'state_i': '',
+        'bias': [],
+        'weight': [],
+        #
+        'num_bit': 1024,
+        'num_iteration': 10,
+        'num_run': 10, #it seems that in the first run the minimum energy is found. So no need to more run
+        'arch': 1,
+    }
 
 class ModelParameters:
     def __init__(self, numberOfUnitsUsed, numberOfEntireUnits):
@@ -63,29 +83,21 @@ def anneal(clamp,
     w = np.zeros((1024, 1024)).astype(int)
     w[0:numUnitsToSelect, 0:numUnitsToSelect] = modelParameters.weights[0:numUnitsToSelect, 0:numUnitsToSelect]
 
-    b = modelParameters.bias
-    s = modelParameters.states.astype(int)
+    b = np.copy(modelParameters.bias)
+    s = np.copy(modelParameters.states)
+    s = s.astype(int)
     c = np.array(0)
     # set anneal parameters
-    pa = {'offset_inc_rate': 0,
-          'tmp_st': tmp_st,
-          'tmp_decay': tmp_decay,
-          'tmp_mode': 0,
-          'tmp_interval': tmp_interval,
-          'noise_model': 0,
-          'parallel_tempering': 0,
-          'pt_interval': 1000}
-    args = {
-        'eg_start': c.tolist(),
-        'state_i': ''.join([chr(ord('0') + i) for i in s.tolist()]),
-        'bias': b.tolist(),
-        'weight': w.reshape((1, 1024 * 1024))[0].tolist(),
-        #
-        'num_bit': 1024,
-        'num_iteration': num_iterations,
-        'num_run': 10, #it seems that in the first run the minimum energy is found. So no need to more run
-        'arch': 1,
-    }
+
+    pa['tmp_st'] = tmp_st
+    pa['tmp_decay'] = tmp_decay
+    pa['tmp_interval']=tmp_interval
+
+    args['eg_start'] = c.tolist()
+    args['state_i'] = ''.join([chr(ord('0') + i) for i in s.tolist()])
+    args['bias'] = b.tolist()
+    args['weight'] = w.reshape((1,1024*1024))[0].tolist()
+    args['num_iteration'] = num_iterations
     #t1=time.time()
     da.setAnnealParameter(pa)
     res = da.doAnneal(args)
@@ -95,14 +107,34 @@ def anneal(clamp,
     print(res['eg_min_o_n'])
 
 
+def propagate(clamp, temperature, units, modelParameters):
+
+    if clamp == Clamp.VISIBLE_UNITS:
+        numUnitsToSelect = units.numHiddenUnits
+    elif clamp == Clamp.NONE:
+        numUnitsToSelect = units.numUnits
+    else:  # we want to clamp the input units only, but not the output units
+        numUnitsToSelect = units.numHiddenUnits + units.numOutputUnits
+
+    for i in range(numUnitsToSelect):
+        # Calculating the energy of a randomly selected unit
+        unit = np.random.randint(0, numUnitsToSelect)
+        energy = 1.*np.dot(modelParameters.weights[unit, 0:units.numUnits], modelParameters.states[0:units.numUnits])
+
+        p = 1. / (1. + np.exp(-energy / temperature))
+        modelParameters.states[unit] = 1. if np.random.uniform() <= p else 0
+
+
 # This funtions sums the co-occurance of active states (states[i] as well as states[j] are both on)
 def sumCoocurrance(clamp, modelParameters, units, numConnections, connections_index):
     sums = np.zeros(numConnections)
-    for i in range(units.numUnits):
-        if (modelParameters.states[i] == 1):
-            for j in range(i + 1, units.numUnits):
-                if (connections_index[i, j] > -1 and modelParameters.states[j] == 1):
-                    sums[connections_index[i, j]] += 1
+    for epoch in range(10):
+        propagate(clamp, 10, units, modelParameters)
+        for i in range(units.numUnits):
+            if (modelParameters.states[i] == 1):
+                for j in range(i + 1, units.numUnits):
+                    if (connections_index[i, j] > -1 and modelParameters.states[j] == 1):
+                        sums[connections_index[i, j]] += 1
     return sums
 
 
@@ -120,7 +152,10 @@ def updateWeights(pplus,
                 modelParameters.weights[i, j] += 2 * np.sign(pplus[index] - pminus[index])
                 modelParameters.weights[j, i] = modelParameters.weights[i, j]
 
-
+def addNoise(pattern):
+    probabilities = 0.8 * pattern + 0.05
+    uniform = np.random.random(pattern.shape)
+    return (uniform < probabilities).astype(int)
 
 def learn(patterns,
           fantasy_particles,
@@ -149,7 +184,8 @@ def learn(patterns,
         pplus = np.zeros(numConnections)
         for pattern in patterns:  # This is the training data set
             # Setting visible units values (inputs and outputs)
-            modelParameters.states[units.numHiddenUnits:units.numHiddenUnits + units.numVisibleUnits] = pattern
+            #add noise to pevent an infinit weight for vectors that never exist
+            modelParameters.states[units.numHiddenUnits:units.numHiddenUnits + units.numVisibleUnits] = addNoise(pattern)
             # Assigning random values to the hidden units
             modelParameters.states[0:units.numHiddenUnits] = np.random.choice([0, 1], units.numHiddenUnits)
             sta = time.time()
@@ -157,23 +193,23 @@ def learn(patterns,
             endt = time.time() - sta
             debug ('Time of annealing: ', endt)
             pplus += sumCoocurrance(Clamp.VISIBLE_UNITS, modelParameters, units, numConnections, connections_index)
-        pplus /= numPatterns
+        pplus /= (10*numPatterns)
 
         ###############################################################
         ## This is the Negative phase
         ###############################################################
         pminus = np.zeros(numConnections)
-        ff = 0
-        for particle in fantasy_particles:  # This is the fantasy particle set
+        #ff = 0
+        #for particle in fantasy_particles:  # This is the fantasy particle set
             # Setting visible units values (inputs and outputs)
-            modelParameters.states[units.numHiddenUnits:units.numHiddenUnits + units.numVisibleUnits] = particle
+        #modelParameters.states[units.numHiddenUnits:units.numHiddenUnits + units.numVisibleUnits] = particle
             # Assigning random values to the hidden units
-            modelParameters.states[0:units.numHiddenUnits] = np.random.choice([0, 1], units.numHiddenUnits)
-            anneal(Clamp.NONE, units, modelParameters, tmp_st, tmp_decay, tmp_interval, num_iterations)
-            fantasy_particles[ff] = modelParameters.states[units.numHiddenUnits:units.numHiddenUnits + units.numVisibleUnits]
-            ff = ff + 1
-            pminus += sumCoocurrance(Clamp.NONE,  modelParameters, units, numConnections, connections_index)
-        pminus /= numParticles
+        modelParameters.states[0:units.numUnits] = np.random.choice([0, 1], units.numUnits)#np.random.choice([0, 1], units.numHiddenUnits)
+        anneal(Clamp.NONE, units, modelParameters, tmp_st, tmp_decay, tmp_interval, num_iterations)
+            #fantasy_particles[ff] = modelParameters.states[units.numHiddenUnits:units.numHiddenUnits + units.numVisibleUnits]
+            #ff = ff + 1
+        pminus = sumCoocurrance(Clamp.NONE,  modelParameters, units, numConnections, connections_index)
+        pminus /= 10#numParticles
 
         weightsChange[j,:] = np.sign(pplus - pminus)
         j += 1
@@ -202,8 +238,8 @@ def recall(pattern,
     modelParameters.states[0:units.numHiddenUnits + units.numOutputUnits] = np.random.choice([0, 1], units.numHiddenUnits + units.numOutputUnits)
     anneal(Clamp.INPUT_UNITS, units, modelParameters, tmp_st, tmp_decay, tmp_interval, num_iterations)
     #return modelParameters.states[0:units.numUnits]
-    #return modelParameters.states[units.numHiddenUnits:units.numHiddenUnits + units.numOutputUnits]
-    return modelParameters.states[0:units.numUnits]
+    return modelParameters.states[0:units.numUnits]#[units.numHiddenUnits:units.numHiddenUnits + units.numOutputUnits]
+
 
 def debug(msg, arg):
     if DEBUG:
