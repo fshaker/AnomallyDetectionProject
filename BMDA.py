@@ -35,7 +35,7 @@ args = {
         'bias': [],
         'weight': [],
         'num_iteration': 10,
-        'num_run': 20, #it seems that in the first run the minimum energy is found. So no need to more run
+        'num_run': 10, #it seems that in the first run the minimum energy is found. So no need to more run
         'ope_mode': 1,
     }
 
@@ -72,8 +72,11 @@ class BMDA(Base.BaseBM):
         s = np.copy(self.states)
         s = s.astype(int)
         c = np.array(0)
+        #Automatic temperature setup based of the weight size
+        w_max = np.amax(np.abs(self.weights))
+        tmp_st = w_max*10
+        tmp_decay = 1 - (0.1/tmp_st)**(tmp_interval/iterations)
         # set anneal parameters
-
         pa['tmp_st'] = tmp_st
         pa['tmp_decay'] = tmp_decay
         pa['tmp_interval'] = tmp_interval
