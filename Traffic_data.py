@@ -22,7 +22,8 @@ class Traffic_data:
         #Apr 09-2019: choose the speed threshold automatically using the mean and standard deviation
         # of speed for each link and each time slot.
         pickle_out = open('TrafficData.pkl', 'rb')
-        speedData = pickle.load(pickle_out)#this is an array of size (43,253,287) (number of days, number of links, samples per day)
+        speedData = pickle.load(pickle_out)#this is an array of size (43,253,287) (
+        # number of days, number of links, samples per day) from Dec 13, 2017 to Jan 24, 2018
         pickle_out.close()
 
         meanSpeed = np.mean(speedData, axis=0)
@@ -35,24 +36,50 @@ class Traffic_data:
         speedData = speedData[
                     [0, 1, 2, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 26, 27, 28, 29, 30, 33, 34, 35,
                      36, 37, 40, 41, 42], :, :]#start_time: end_time]
-        num_time_points_used = end_time - start_time #speedData.shape[2]
         num_days = speedData.shape[0]
-        print(speedData.shape)
-        raw_patterns = np.zeros((self.links, num_time_points_used * num_days), float)
+        #print(speedData.shape)
+
         for k in range(num_days):
             speedData[k,:,:] = (speedData[k,:,:]>speedThreshold).astype(int)
+
         speedData = speedData[:,:,start_time: end_time]
+        raw_patterns = np.zeros((self.links, self.samples_per_interval * num_days), float)
         for k in range(num_days):
             raw_patterns[:, self.samples_per_interval * k: self.samples_per_interval * (k + 1)] = speedData[k, 0:self.links, 0:self.samples_per_interval]
 
         self.train = raw_patterns.T
         #self.train = self.train>self.threshold
-        self.ds_size = num_time_points_used * num_days
-        # Prepare the test data
-        pickle_out =open("test_week_speed_Jan023.pickle", "rb")
+        self.ds_size = self.samples_per_interval * num_days
+
+        # Prepare the test data. Speed data consists of 22 days of speed measurements
+        # from Jan 10, 2018 to Jan 31, 2018
+        pickle_out =open("TestData.pkl", "rb")
         raw_speed_test = pickle.load(pickle_out)
         pickle_out.close()
-        speed_test = raw_speed_test>speedThreshold
-        speed_test = speed_test[0:self.links, start_time:end_time]
-        self.test = speed_test.T
+
+        # we are only interested in week days for now
+        raw_speed_test = raw_speed_test[[0, 1, 2, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 19, 20, 21], :, :]
+        num_test_days = raw_speed_test.shape[0]
+        for k in range(num_test_days):
+            raw_speed_test[k,:,:] = raw_speed_test[k,:,:]>speedThreshold
+        raw_speed_test = raw_speed_test[:, 0:self.links, start_time:end_time]
+
+        speed_test = np.zeros((self.links, self.samples_per_interval * num_test_days), int)
+        for k in range(num_test_days):
+            speed_test[:, self.samples_per_interval*k : self.samples_per_interval* (k+1)] = raw_speed_test[k, 0:self.links, 0:self.samples_per_interval]
+        self.test = (speed_test.T).astype(int)
         #self.test = self.test>self.threshold
+
+        # Load the ground truth file.
+        # This file consists of a three dimensional array of size
+        # 22X253X287. first axis corresponds to 22 days of incident reports
+        # from Jan 10, to Jan 31, 2018.
+        # for each day there is an array of size 253X287. In this array,
+        # 1 means an incident happened and 0 means no incident
+        GT = open("ground_truth.pkl", "rb")
+        ground_truth = pickle.load(GT)
+        GT.close()
+        sub_ground_truth = np.zeros((self.links, self.samples_per_interval * num_test_days), int)
+        for k in range(num_test_days):
+            sub_ground_truth[:, self.samples_per_interval*k : self.samples_per_interval* (k+1)] = ground_truth[k, 0:self.links, 0:self.samples_per_interval]
+        self.ground_truth = sub_ground_truth.T

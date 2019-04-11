@@ -33,6 +33,7 @@ class TrainingData:
             self.S = np.concatenate(S, axis=0)
             self.ds_size = ds_size
             self.test_data = self.S
+            self.ground_truth = self.S
         elif ds == "4bits":
             self.S = np.array([[1, 0, 0, 0],
                                [0, 1, 0, 0],
@@ -40,10 +41,12 @@ class TrainingData:
                                [0, 0, 0, 1]])
             self.ds_size = 4
             self.test_data = self.S
+            self.ground_truth = self.S
         elif ds == "traffic":
             traffic_data = Traffic_data(input, 0, 50)
             self.S = traffic_data.train
             self.test_data = traffic_data.test
+            self.ground_truth = traffic_data.ground_truth
             self.ds_size = traffic_data.ds_size
         elif ds == "small_traffic":
             pickle_out = open("small_traffic_dataset.pkl", "rb")
@@ -102,7 +105,7 @@ class TrainingData:
             return np.concatenate(images, axis=0)
 
     def get_test_data(self):
-        return self.test_data
+        return self.test_data, self.ground_truth
 
     def resize(self, row, col):
         images = []

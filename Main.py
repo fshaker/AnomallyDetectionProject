@@ -42,6 +42,11 @@ def get_args():
                         type = int,
                         default = 10,
                         help = "The number of training patterns used for training in each epoch")
+    parser.add_argument("--use_auto_temp_setup",
+                        type = bool,
+                        default = False,
+                        help = "Use the commandline input for temp_st (False) "
+                               "or compute is dynamically using network weights (True)")
     parser.add_argument("--temp_st",
                         type = float,
                         default = 20.,
@@ -187,8 +192,8 @@ BM_args['tmp_interval'] = args.temp_interval
 BM_args['anneal_iterations'] = args.anneal_iterations #
 BM_args['recall_tmp_st'] = args.temp_st #
 BM_args['recall_tmp_decay'] = args.temp_decay #
-BM_args['recall_tmp_interval'] =2000*args.temp_interval
-BM_args['recall_iterations'] = (2000*args.anneal_iterations + 2000*args.temp_interval*3) #
+BM_args['recall_tmp_interval'] =10*args.temp_interval
+BM_args['recall_iterations'] = 10*args.anneal_iterations #+ 10*args.temp_interval*3 #
 BM_args['co_occurrence_temp'] = args.co_occurrence_temp
 BM_args['co_occurrence_epoch'] = args.co_occurrence_epoch
 BM_args['save'] = args.save
@@ -263,11 +268,14 @@ if args.run_reconstructions:
             recovered = BM.recall(data)
             print("recovered", recovered)
     elif args.data == "traffic":
-        data = TrainingData.get_test_data()
-        print("testData: ", data)
+        test_data, ground_truth = TrainingData.get_test_data()
+        #print("testData: ", test_data)
         for i in range(1):
-            recovered = BM.recall(data)
+            recovered = BM.recall(test_data[0:10])
             print("recovered", recovered)
+
+
+        #
     elif args.data == "BAS":
         tests = 8
         cols = 4

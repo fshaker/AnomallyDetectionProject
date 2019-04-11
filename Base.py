@@ -78,9 +78,11 @@ class BaseBM:
     def train(self, input_patterns, iterations, FP):
         if FP:
             self.fantasy_particles = np.append(input_patterns, input_patterns, axis=1)
-            self.train_FP(input_patterns, iterations)
+            dw , err = self.train_FP(input_patterns, iterations)
         else:
-            self.train_NoFP(input_patterns, iterations)
+            dw, err = self.train_NoFP(input_patterns, iterations)
+        return dw, err
+
 
     # Train without using fantasy particles:
     def train_NoFP(self, input_patterns, iterations):
