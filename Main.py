@@ -44,7 +44,7 @@ def get_args():
                         help = "The number of training patterns used for training in each epoch")
     parser.add_argument("--use_auto_temp_setup",
                         type = bool,
-                        default = False,
+                        default = True,
                         help = "Use the commandline input for temp_st (False) "
                                "or compute is dynamically using network weights (True)")
     parser.add_argument("--temp_st",
@@ -161,6 +161,7 @@ if args.load != None:
     args_loaded.temp_decay = args.temp_decay
     args_loaded.temp_interval = args.temp_interval
     args_loaded.anneal_iterations = args.anneal_iterations
+    args_loaded.errors = args.errors
     args = args_loaded
 
 print("arguments", args)
@@ -227,8 +228,8 @@ else:
     f = open(args.tmpdir + "/" + args.load, "rb")
     params = pickle.load(f)
     f.close()
-    w = params['W']
-    params['W']=w//10
+    # w = params['W']
+    # params['W']=w//10
     BM.setParameters(params)
     dw = params['dw']
     error = params['error']
@@ -268,11 +269,59 @@ if args.run_reconstructions:
             recovered = BM.recall(data)
             print("recovered", recovered)
     elif args.data == "traffic":
+        #test_data and ground_truth size: 576X100
         test_data, ground_truth = TrainingData.get_test_data()
+        print("test_data: ", test_data.shape)
+        print("ground_truth:", ground_truth.shape)
         #print("testData: ", test_data)
+        recovered = []
         for i in range(1):
-            recovered = BM.recall(test_data[0:10])
+            recovered = BM.recall(test_data)
             print("recovered", recovered)
+        #Find the detected incidents:
+        incidents = recovered>test_data
+
+        agree = False
+        consecutive_sofar = 0
+        consecutive_needed = 2
+        true_positive = []
+        for j in range(incidents.shape[1]):
+            consecutive_sofar = 0
+            for i in range(incidents.shape[0]):
+                if (incidents[i,j] == 1 and ground_truth[i,j]==1):
+                    agree = True
+                    consecutive_sofar +=1
+                    if (consecutive_sofar == consecutive_needed):
+                        true_positive.append([i,j])
+                else:
+                    agree = False
+                    consecutive_sofar = 0
+
+        print("True Positive:\n", true_positive)
+
+        comparison = np.zeros(incidents.shape)
+        for i in range(incidents.shape[0]):
+            for j in range(incidents.shape[1]):
+                if incidents[i,j]==0:
+                    if ground_truth[i,j]==0:
+                        comparison[i,j]=0
+                    else:
+                        comparison[i,j]=1
+                else:
+                    if ground_truth[i,j]==0:
+                        comparison[i,j]=2
+                    else:
+                        comparison[i,j]=3
+        plt.figure()
+        plt.imshow(comparison, cmap=plt.cm.get_cmap('Blues',4))
+        plt.colorbar()
+        plt.clim(0,3)
+        plt.savefig("comparisson")
+        plt.figure()
+        plt.imshow(ground_truth[504:540,:],cmap=plt.cm.get_cmap('Blues',2))
+        plt.colorbar()
+        plt.clim(0,1)
+        plt.savefig("ground_truth")
 
 
         #
@@ -293,36 +342,45 @@ if args.run_reconstructions:
         # Flip some bits at random in each
         # of the rows
         #
-        sample = np.copy(I)
-        for t in range(tests):
-            for i in range(args.errors):
-                field = np.random.randint(0, args.N * args.N)
-                sample[t, field] = (1 if I[t, field] == 0 else 0)
-        #
-        # Sample
-        #
-        print("Sampling reconstructions")
-        R = np.asarray(BM.recall(sample))
+        print("errors ", args.errors)
+        runs = 20
+        reconstruction_error = np.zeros(runs)
+        for kk in range(runs):
+            sample = np.copy(I)
+            for t in range(tests):
+                for i in range(args.errors):
+                    field = np.random.randint(0, args.N * args.N)
+                    sample[t, field] = (1 if I[t, field] == 0 else 0)
+                    #print("changed field ", field)
+            #
+            # Sample
+            #
+            print("Sampling reconstructions")
+            _, R = BM.recall(sample)
+            R = np.asarray(R)
 
-        ###############################################
-        #Compare the energy of the resulting state and the correct state
-        ##########################################
-        parameters = BM.getParameters()
-        W = np.asarray(parameters['W'])
-        #print(R)
-        #print(Complete)
-        matmul = np.matmul(R, W)
-        Energy1 = np.matmul(matmul, np.transpose(R))
-        R = R[:,args.hidden:args.hidden+args.N*args.N]
-        #
-        # R2 = np.asarray(BM.recall_hidden(I))
-        # matmul2 = np.matmul(R2, W)
-        # Energy2 = np.matmul(matmul2, np.transpose(R2))
-        #
-        print("Energy of recovered states: ", np.diag(Energy1))
-        reconstruction_error = np.linalg.norm(R - sample)
-        print((reconstruction_error)**2/tests)
-        # print("Energy of correct states: ", Energy2)
+            ###############################################
+            #Compare the energy of the resulting state and the correct state
+            ##########################################
+            parameters = BM.getParameters()
+            W = np.asarray(parameters['W'])
+            matmul = np.matmul(R, W)
+            Energy1 = -0.5*np.matmul(matmul, np.transpose(R))
+            R = R[:,args.hidden:args.hidden+args.N*args.N]
+            #
+            R2 = np.asarray(BM.recall_hidden(I))
+            matmul2 = np.matmul(R2, W)
+            Energy2 = -0.5*np.matmul(matmul2, np.transpose(R2))
+            #
+            print("Energy of recovered states: ")
+            print(np.diag(Energy1))
+            print("Energy of correct states: ")
+            print(np.diag(Energy2))
+            print("reconstruction Error with respect to original patterns")
+            reconstruction_error[kk] = np.linalg.norm(R - I)
+        recon_err = np.mean((reconstruction_error ** 2)/tests)
+        print("reconstruction error per run: ",(reconstruction_error) ** 2 / tests)
+        print("Average reconstruction error: ", recon_err)
         ###############################################
         #
         # Display results
