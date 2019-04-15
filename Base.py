@@ -78,7 +78,7 @@ class BaseBM:
     def train(self, input_patterns, iterations, FP):
         if FP:
             self.fantasy_particles = np.append(input_patterns, input_patterns, axis=1)
-            dw , err = self.train_FP(input_patterns, iterations)
+            dw, err = self.train_FP(input_patterns, iterations)
         else:
             dw, err = self.train_NoFP(input_patterns, iterations)
         return dw, err
@@ -126,12 +126,11 @@ class BaseBM:
             if (self.global_step % 50) == 0:
                 n=patterns.shape[1]
                 recovered = self.recall(patterns=patterns[:,0:n//2])
-                recon_error = np.linalg.norm(patterns[:,0:n//2] - np.asarray(recovered)[:,self.hidden:self.hidden + self.output])
+                recon_error = np.linalg.norm(patterns[:,0:n//2] - np.asarray(recovered))
                 # print("recovered", recovered)
                 # print("patterns", patterns[:,0:n//2])
                 errors.append(recon_error)
                 print("Iteration ", self.global_step, "recon error is ", recon_error)
-                self.update_parameters()
             self.global_step += 1
             if (self.global_step%self.learning_rate_cycle) == 0:
                 self.learning_rate = self.learning_rate*(1.-self.learning_rate_decay)
@@ -186,14 +185,13 @@ class BaseBM:
 
             if (self.global_step % 50) == 0:
                 n = patterns.shape[1]
-                recovered = self.recall(patterns=patterns[:, 0:n // 2])
+                recovered,_ = self.recall(patterns=patterns[:, 0:n // 2])
                 recon_error = np.linalg.norm(
-                    patterns[:, 0:n // 2] - np.asarray(recovered)[:, self.hidden:self.hidden + self.output])
+                    patterns[:, 0:n // 2] - np.asarray(recovered))
                 # print("recovered", recovered)
                 # print("patterns", patterns[:,0:n//2])
                 errors.append(recon_error)
                 print("Iteration ", self.global_step, "recon error is ", recon_error)
-                self.update_parameters()
             self.global_step += 1
             if (self.global_step%self.learning_rate_cycle) == 0:
                 self.learning_rate = self.learning_rate*(1.-self.learning_rate_decay)
@@ -263,18 +261,19 @@ class BaseBM:
             self.states[0:self.hidden + self.output] = np.random.choice([0, 1], self.hidden + self.output)
             self.anneal(Clamp.INPUT_UNITS, self.recall_tmp_st, self.recall_tmp_decay, self.recall_tmp_interval,
                         self.recall_iterations)
-            output_ = self.states[0:self.bmunits] #self.states[self.hidden:self.hidden + self.output]
+            output_ = self.states[0:self.bmunits]# [self.hidden:self.hidden + self.output]
 
             recovered.append(output_.tolist())
-        return recovered
+        return [x[self.hidden:self.hidden + self.output] for x in recovered], recovered
 
-    def recall_hidden(self, patterns):
+    def recall_hidden(self, input_patterns):
         # Setting pattern to recall
+        patterns = np.append(input_patterns, input_patterns, axis=1)
         recovered = []
         for pattern in patterns:
-            self.states[self.hidden + self.output:self.bmunits] = pattern
+            self.states[self.hidden:self.bmunits] = pattern
             # Assigning random values to the hidden and output states
-            self.states[0:self.hidden + self.output] = np.random.choice([0, 1], self.hidden + self.output)
+            self.states[0:self.hidden] = np.random.choice([0, 1], self.hidden)
             self.anneal(Clamp.VISIBLE_UNITS, self.recall_tmp_st, self.recall_tmp_decay, self.recall_tmp_interval,
                         self.recall_iterations)
             output_ = self.states[0:self.bmunits]
