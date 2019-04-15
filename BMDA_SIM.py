@@ -23,14 +23,42 @@ class BMDA_SIM(Base.BaseBM):
     #                                recall_iterations, coocurrance_temp, coocurrance_epoch, save)
 
 
+    # def anneal(self, clamp, tmp_st, tmp_decay, tmp_interval, iterations):
+    #     temperature = tmp_st
+    #     step = np.round(iterations/tmp_interval)
+    #     for i in range(np.int(step)):
+    #         for j in range(tmp_interval):
+    #             self.DApropagate(clamp, temperature)
+    #         temperature = temperature * (1 - tmp_decay)
+
+
     def anneal(self, clamp, tmp_st, tmp_decay, tmp_interval, iterations):
+        #first calculate the tmp_st based on the current network weights.
+        h = np.matmul(self.weights, self.states[0:self.bmunits])  # + bias when bias is used
+        delta_e = np.multiply((1 - 2 * self.states[0:self.bmunits]), h) #shows the change of overall energy when the state of each unit changes
+        #we want the initial probability of changing a unit's state to be high
+        p = 0.7 #initial probability
+        temps = -delta_e/(np.log(1/p-1))
+        tmp_st = np.amax(temps)
+        if tmp_st>10000:
+            print("Temperature is too big!!!!!!!")
+        # print("tmp_st",tmp_st)
+        #We want tmp_interval to be at least equal to the number of nodes
+        #that are allowed to change state
+        if clamp == Clamp.VISIBLE_UNITS:
+            tmp_interval = self.hidden
+        elif clamp == Clamp.NONE:
+            tmp_interval = self.bmunits
+        else:
+            tmp_interval = self.hidden + self.output
+        Tn=1 # the final temperature
+
+        step = round(np.log(Tn/tmp_st)/np.log(1-tmp_decay))
         temperature = tmp_st
-        step = np.round(iterations/tmp_interval)
         for i in range(np.int(step)):
             for j in range(tmp_interval):
                 self.DApropagate(clamp, temperature)
             temperature = temperature * (1 - tmp_decay)
-
     def DApropagate(self, clamp, temperature):
         if clamp == Clamp.VISIBLE_UNITS:
             numUnitsToSelect = self.hidden
